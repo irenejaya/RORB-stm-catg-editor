@@ -1,0 +1,36 @@
+[general]
+name=RORB catg/stm Editor
+qgisMinimumVersion=3.22
+description=Table-format viewer and editor for RORB .catg and .stm files — batch-edit print flags in catchment files and create or edit storm files interactively.
+about=RORB catg/stm Editor displays RORB text files in interactive, colour-coded tables instead of raw text, so you can work with them without risking the underlying file structure.
+    <br><br>
+    <b>CATG Editor</b> — Open a .catg file and view nodes, reaches, storages, and inflow/outflow sections in a structured table. The main purpose is batch print-flag editing: set node print flags (0 / 70 / 71 / 72) and reach print flags (0 / 1) across many rows at once, instead of clicking each node one-by-one in the RORB Graphical Editor. Filter and search by node name or index. All other data is read-only and preserved exactly on save.
+    <br><br>
+    <b>STM Editor</b> — Open an existing .stm file or create a new non-uniform storm file from scratch. The New STM wizard scaffolds a complete file (event header, storm parameters, burst time ranges, pluviograph data, sub-area rainfalls, pluviograph references, and hydrograph stations). Every section is shown as an editable table where you can add or delete bursts, pluviographs, and hydrograph stations — storm parameter counts sync automatically. Delimiter format (tab or comma) and -99 terminators are managed by the editor.
+
+version=1.0.0
+author=Irene Jaya
+email=irene.jaya@jacobs.com
+
+category=Analysis
+tags=python,RORB,hydrology,catchment,storm,editor,table,rainfall-runoff,flood,non-uniform,stm,catg
+
+icon=icon.svg
+
+experimental=False
+deprecated=False
+hasProcessingProvider=no
+server=False
+
+changelog=
+    1.0.0 - Initial release
+        * CATG Editor: interactive table view of RORB catchment files
+        * CATG Editor: editable print flags for nodes and reaches
+        * CATG Editor: batch operations, filter, clipboard support
+        * STM Editor: open existing or create new non-uniform STM files
+        * STM Editor: guided New STM wizard with full section scaffolding
+        * STM Editor: add/delete bursts, pluviographs, hydrograph stations
+        * STM Editor: delimiter-preserving (tab/comma) round-trip editing
+        * Both: structured table editing — no manual text-file formatting
+        * Both: tree navigation, colour-coded sections, help panel
+        * Both: lossless file reconstruction on save

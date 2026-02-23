@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg_stm" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1565C0"/>
+      <stop offset="100%" stop-color="#0D47A1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Blue rounded background (storm = rain/blue) -->
+  <rect x="2" y="2" width="60" height="60" rx="14" ry="14" fill="url(#bg_stm)"/>
+
+  <!-- Cloud shape -->
+  <ellipse cx="26" cy="17" rx="10" ry="6" fill="#90CAF9" opacity="0.8"/>
+  <ellipse cx="38" cy="17" rx="8" ry="5.5" fill="#90CAF9" opacity="0.8"/>
+  <ellipse cx="32" cy="14" rx="7" ry="5" fill="#BBDEFB" opacity="0.7"/>
+
+  <!-- Rain drops -->
+  <line x1="22" y1="24" x2="20" y2="30" stroke="#4FC3F7" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="28" y1="24" x2="26" y2="31" stroke="#4FC3F7" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="34" y1="24" x2="32" y2="30" stroke="#4FC3F7" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="40" y1="24" x2="38" y2="29" stroke="#4FC3F7" stroke-width="1.5" stroke-linecap="round"/>
+
+  <!-- Table icon (bottom half) -->
+  <rect x="14" y="36" width="36" height="18" rx="2.5" fill="#fff" opacity="0.9"/>
+  <rect x="14" y="36" width="36" height="5" rx="2.5" fill="#64B5F6"/>
+  <line x1="14" y1="44" x2="50" y2="44" stroke="#BBDEFB" stroke-width="0.8"/>
+  <line x1="14" y1="48" x2="50" y2="48" stroke="#BBDEFB" stroke-width="0.8"/>
+  <line x1="14" y1="52" x2="50" y2="52" stroke="#BBDEFB" stroke-width="0.8"/>
+  <line x1="26" y1="41" x2="26" y2="54" stroke="#BBDEFB" stroke-width="0.8"/>
+  <line x1="38" y1="41" x2="38" y2="54" stroke="#BBDEFB" stroke-width="0.8"/>
+
+  <!-- "STM" label -->
+  <text x="32" y="39.5" font-family="Arial,Helvetica,sans-serif" font-size="4"
+        font-weight="bold" fill="#fff" text-anchor="middle" dominant-baseline="central">
+    STM
+  </text>
+</svg>
