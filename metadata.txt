@@ -10,7 +10,10 @@ about=RORB catg/stm Editor displays RORB text files in interactive, colour-coded
 
 version=1.0.0
 author=Irene Jaya
-email=irene.jaya@jacobs.com
+email=irenejaya1@gmail.com
+tracker=https://github.com/irenejaya/RORB-catg-stm-editor/issues
+repository=https://github.com/irenejaya/RORB-catg-stm-editor
+homepage=https://github.com/irenejaya/RORB-catg-stm-editor
 
 category=Analysis
 tags=python,RORB,hydrology,catchment,storm,editor,table,rainfall-runoff,flood,non-uniform,stm,catg
