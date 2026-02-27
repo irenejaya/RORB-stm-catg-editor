@@ -649,6 +649,8 @@ class STMEditorDialog(QDialog):
         self.filepath = ""
         self._current_idx = -1
         self._updating = False          # guards against cellChanged feedback
+        self._has_unsaved_changes = False  # track unsaved changes
+        self._original_sections_data = []  # store original data for change detection
 
         self.setWindowTitle("RORB STM Editor")
         self.setMinimumSize(1000, 600)
@@ -987,6 +989,132 @@ class STMEditorDialog(QDialog):
         self.btn_del_section.clicked.connect(self._delete_current_section)
 
     # ====================================================================
+    # CLOSE EVENT HANDLING
+    # ====================================================================
+
+    def closeEvent(self, event):
+        """Handle dialog close - check for unsaved changes."""
+        if self._check_unsaved_changes():
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                self._on_save()
+                # Check if save was successful (user might have cancelled save dialog)
+                if self._check_unsaved_changes():
+                    event.ignore()  # Save was cancelled
+                else:
+                    self._reset_editor_state()  # Clear before closing
+                    event.accept()  # Save successful, close
+            elif reply == QMessageBox.Discard:
+                self._reset_editor_state()  # Clear before closing
+                event.accept()  # Close without saving
+            else:  # Cancel
+                event.ignore()  # Don't close
+        else:
+            self._reset_editor_state()  # Clear before closing
+            event.accept()  # No changes, close normally
+
+    def _reset_editor_state(self):
+        """Reset the editor to initial clean state."""
+        # Clear data
+        self.sections = []
+        self.filepath = ""
+        self._current_idx = -1
+        self._has_unsaved_changes = False
+        self._original_sections_data = []
+        
+        # Clear tree
+        self.tree.clear()
+        
+        # Clear editor panel
+        self._clear_editor()
+        placeholder = QLabel("Open an STM file to begin editing.")
+        placeholder.setAlignment(Qt.AlignCenter)
+        placeholder.setStyleSheet("color: #999; font-size: 14px;")
+        self.editor_lay.addWidget(placeholder)
+        
+        # Reset UI
+        self.lbl_file.setText("No file loaded")
+        self.lbl_file.setStyleSheet(
+            "color: #666; font-style: italic; font-size: 10pt; padding-left: 12px;"
+        )
+        self.btn_save.setEnabled(False)
+        self.btn_save_as.setEnabled(False)
+        self._enable_section_buttons(False)
+        
+        # Reset window title
+        self.setWindowTitle("RORB STM Editor")
+        
+        # Reset status
+        self._status("Ready — open an STM file to begin")
+        
+        # Reset info panels
+        self.file_info_label.setText(
+            "<i style='color:#888;'>No file loaded</i>"
+        )
+        self.info_label.setText(
+            "<i style='color:#888;'>Select a section to see details</i>"
+        )
+
+    def _check_unsaved_changes(self) -> bool:
+        """Check if there are any unsaved changes in the sections."""
+        if not self.sections:
+            return False
+        
+        # Simple approach: compare section data with original
+        for i, sec in enumerate(self.sections):
+            if i < len(self._original_sections_data):
+                if sec.data != self._original_sections_data[i]:
+                    return True
+                # Check text sections
+                if hasattr(sec, 'raw_text') and sec.raw_text != self._original_sections_data[i]:
+                    return True
+        
+        return False
+
+    def _mark_unsaved_changes(self):
+        """Mark that there are unsaved changes and update UI."""
+        if not self._has_unsaved_changes:
+            self._has_unsaved_changes = True
+            self._update_window_title()
+
+    def _clear_unsaved_changes(self):
+        """Clear unsaved changes flag and update UI."""
+        self._has_unsaved_changes = False
+        self._store_original_data()
+        self._update_window_title()
+
+    def _store_original_data(self):
+        """Store a copy of current section data for change detection."""
+        self._original_sections_data = []
+        for sec in self.sections:
+            if sec.data:
+                self._original_sections_data.append(sec.data.copy())
+            elif hasattr(sec, 'raw_text'):
+                self._original_sections_data.append(sec.raw_text)
+            else:
+                self._original_sections_data.append([])
+
+    def _update_window_title(self):
+        """Update window title to show file name and unsaved changes indicator."""
+        if self.filepath:
+            fname = os.path.basename(self.filepath)
+            title = f"RORB STM Editor - {fname}"
+            if self._check_unsaved_changes():
+                title += " *"
+        else:
+            title = "RORB STM Editor"
+            if self.sections and self._check_unsaved_changes():
+                title += " (unsaved) *"
+        self.setWindowTitle(title)
+
+    # ====================================================================
     # FILE OPERATIONS
     # ====================================================================
 
@@ -1013,6 +1141,7 @@ class STMEditorDialog(QDialog):
             self.btn_save.setEnabled(True)
             self.btn_save_as.setEnabled(True)
             self._enable_section_buttons(True)
+            self._clear_unsaved_changes()
 
             self.progress_bar.setValue(60)
             QApplication.processEvents()
@@ -1065,6 +1194,7 @@ class STMEditorDialog(QDialog):
     def _write(self, path: str):
         try:
             STMWriter().write(self.sections, path)
+            self._clear_unsaved_changes()
             self._status(f"Saved successfully -> {path}")
         except Exception as exc:
             QMessageBox.critical(self, "Save Error",
@@ -2302,6 +2432,7 @@ class STMEditorDialog(QDialog):
             )
             def _update_pluvio_name(text):
                 sec.prefix_line = text
+                self._mark_unsaved_changes()
             name_edit.textChanged.connect(_update_pluvio_name)
             lay.addWidget(name_edit)
 
@@ -2339,6 +2470,7 @@ class STMEditorDialog(QDialog):
         def _cell(_r, col):
             if not self._updating and col < len(sec.data):
                 sec.data[col] = tbl.item(0, col).text()
+                self._mark_unsaved_changes()
         tbl.cellChanged.connect(_cell)
 
         lay.addWidget(tbl, 1)
@@ -2546,6 +2678,7 @@ class STMEditorDialog(QDialog):
         def _cell(_r, col):
             if not self._updating and col < len(sec.data):
                 sec.data[col] = tbl.item(0, col).text()
+                self._mark_unsaved_changes()
         tbl.cellChanged.connect(_cell)
 
         data_lay.addWidget(tbl, 1)
