@@ -125,6 +125,7 @@ class ReachData:
     print_flag: int = 0
     raw_lines: List[str] = field(default_factory=list)
     _original_print_flag: int = 0
+    _original_trans_flag: int = 0
 
 
 @dataclass
@@ -314,21 +315,23 @@ class CATGParser:
                         raw_lines.append(lines[idx])
                 idx += 1
 
-                pf = int(m.group(11))
+                pf = int(m.group(7))
+                tf = int(m.group(5))
                 reach = ReachData(
                     index=int(m.group(1)),
                     name=m.group(2),
                     from_node=int(m.group(3)),
                     to_node=int(m.group(4)),
-                    unknown1=int(m.group(5)),
+                    unknown1=tf,
                     reach_type=int(m.group(6)),
-                    unknown2=int(m.group(7)),
+                    unknown2=int(m.group(11)),
                     length=float(m.group(8)),
                     slope=float(m.group(9)),
                     n_coords=int(m.group(10)),
                     print_flag=pf,
                     raw_lines=raw_lines,
                     _original_print_flag=pf,
+                    _original_trans_flag=tf,
                 )
                 catg.reaches.append(reach)
             else:
@@ -413,19 +416,45 @@ class CATGWriter:
 
     @staticmethod
     def _patch_reach_print_flag(raw_line: str, new_flag: int) -> str:
-        """Patch the last integer (print flag) on a reach header line."""
-        m = re.search(r'(\s+)(\d+)\s*$', raw_line)
+        """Patch the print flag (7th field after C) on a reach header line."""
+        # Match the full reach line structure to replace specifically the 7th integer (print flag)
+        m = re.match(
+            r'^(C\s+\d+\s+\S+\s+\d+\s+\d+\s+\d+\s+\d+)(\s+)(\d+)(\s+[\d.]+\s+[\d.]+\s+\d+\s+\d+\s*)$',
+            raw_line
+        )
         if not m:
             return raw_line
-        prefix = raw_line[:m.start()]
-        old_spacing = m.group(1)
-        old_value = m.group(2)
+        prefix = m.group(1)  # Everything up to print flag
+        old_spacing = m.group(2)
+        old_value = m.group(3)  # Current print flag
+        suffix = m.group(4)  # Everything after print flag
 
         total_width = len(old_spacing) + len(old_value)
         new_value = str(new_flag)
         new_spacing = ' ' * max(1, total_width - len(new_value))
 
-        return prefix + new_spacing + new_value
+        return prefix + new_spacing + new_value + suffix
+
+    @staticmethod
+    def _patch_reach_trans_flag(raw_line: str, new_flag: int) -> str:
+        """Patch the TransFlag (5th field after C) on a reach header line."""
+        # Match the full reach line structure to replace the 5th integer (trans flag)
+        m = re.match(
+            r'^(C\s+\d+\s+\S+\s+\d+\s+\d+)(\s+)(\d+)(\s+\d+\s+\d+\s+[\d.]+\s+[\d.]+\s+\d+\s+\d+\s*)$',
+            raw_line
+        )
+        if not m:
+            return raw_line
+        prefix = m.group(1)  # Everything up to trans flag
+        old_spacing = m.group(2)
+        old_value = m.group(3)  # Current trans flag
+        suffix = m.group(4)  # Everything after trans flag
+
+        total_width = len(old_spacing) + len(old_value)
+        new_value = str(new_flag)
+        new_spacing = ' ' * max(1, total_width - len(new_value))
+
+        return prefix + new_spacing + new_value + suffix
 
     @staticmethod
     def _reconstruct_line2(node: NodeData) -> str:
@@ -492,15 +521,23 @@ class CATGWriter:
 
         # 6. Reaches
         for reach in catg.reaches:
+            line = reach.raw_lines[0]
+            changed = False
+            
+            # Check if TransFlag changed
+            if reach.unknown1 != reach._original_trans_flag:
+                line = self._patch_reach_trans_flag(line, reach.unknown1)
+                reach._original_trans_flag = reach.unknown1
+                changed = True
+            
+            # Check if PrintFlag changed
             if reach.print_flag != reach._original_print_flag:
-                patched = self._patch_reach_print_flag(
-                    reach.raw_lines[0], reach.print_flag
-                )
-                out.append(patched)
-                out.extend(reach.raw_lines[1:])
+                line = self._patch_reach_print_flag(line, reach.print_flag)
                 reach._original_print_flag = reach.print_flag
-            else:
-                out.extend(reach.raw_lines)
+                changed = True
+            
+            out.append(line)
+            out.extend(reach.raw_lines[1:])
 
         # 7. Reach gap
         out.extend(catg.reach_gap)
@@ -612,6 +649,7 @@ class CATGEditorDialog(QDialog):
         self.catg: Optional[CATGFile] = None
         self.filepath = ""
         self._updating = False    # guard for cellChanged feedback loops
+        self._has_unsaved_changes = False  # track unsaved changes
 
         self.setWindowTitle("RORB CATG Editor")
         self.setMinimumSize(1100, 650)
@@ -907,6 +945,120 @@ class CATGEditorDialog(QDialog):
         self.tree.currentItemChanged.connect(self._on_tree_changed)
 
     # ====================================================================
+    # CLOSE EVENT HANDLING
+    # ====================================================================
+
+    def closeEvent(self, event):
+        """Handle dialog close - check for unsaved changes."""
+        if self._check_unsaved_changes():
+            reply = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                "You have unsaved changes. Do you want to save before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+            
+            if reply == QMessageBox.Save:
+                self._on_save()
+                # Check if save was successful (user might have cancelled save dialog)
+                if self._check_unsaved_changes():
+                    event.ignore()  # Save was cancelled
+                else:
+                    self._reset_editor_state()  # Clear before closing
+                    event.accept()  # Save successful, close
+            elif reply == QMessageBox.Discard:
+                self._reset_editor_state()  # Clear before closing
+                event.accept()  # Close without saving
+            else:  # Cancel
+                event.ignore()  # Don't close
+        else:
+            self._reset_editor_state()  # Clear before closing
+            event.accept()  # No changes, close normally
+
+    def _reset_editor_state(self):
+        """Reset the editor to initial clean state."""
+        # Clear data
+        self.catg = None
+        self.filepath = ""
+        self._has_unsaved_changes = False
+        
+        # Clear tree
+        self.tree.clear()
+        
+        # Clear editor panel
+        self._clear_editor()
+        placeholder = QLabel("Open a CATG file to begin editing.")
+        placeholder.setAlignment(Qt.AlignCenter)
+        placeholder.setStyleSheet("color: #999; font-size: 14px;")
+        self.editor_lay.addWidget(placeholder)
+        
+        # Reset UI
+        self.lbl_file.setText("No file loaded")
+        self.lbl_file.setStyleSheet(
+            "color: #666; font-style: italic; font-size: 10pt; padding-left: 12px;"
+        )
+        self.btn_save.setEnabled(False)
+        self.btn_save_as.setEnabled(False)
+        
+        # Reset window title
+        self.setWindowTitle("RORB CATG Editor")
+        
+        # Reset status
+        self._status("Ready — open a CATG file to begin")
+        
+        # Reset info panels
+        self.file_info_label.setText(
+            "<i style='color:#888;'>No file loaded</i>"
+        )
+        self.info_label.setText(
+            "<i style='color:#888;'>Select a section to see details</i>"
+        )
+
+    def _check_unsaved_changes(self) -> bool:
+        """Check if there are any unsaved changes in the data."""
+        if not self.catg:
+            return False
+        
+        # Check nodes for changes
+        for node in self.catg.nodes:
+            if node.print_flag != node._original_print_flag:
+                return True
+            if node.print_location != node._original_location:
+                return True
+        
+        # Check reaches for changes
+        for reach in self.catg.reaches:
+            if reach.print_flag != reach._original_print_flag:
+                return True
+            if reach.unknown1 != reach._original_trans_flag:
+                return True
+        
+        return False
+
+    def _mark_unsaved_changes(self):
+        """Mark that there are unsaved changes and update UI."""
+        if not self._has_unsaved_changes:
+            self._has_unsaved_changes = True
+            self._update_window_title()
+
+    def _clear_unsaved_changes(self):
+        """Clear unsaved changes flag and update UI."""
+        self._has_unsaved_changes = False
+        self._update_window_title()
+
+    def _update_window_title(self):
+        """Update window title to show file name and unsaved changes indicator."""
+        if self.filepath:
+            fname = os.path.basename(self.filepath)
+            title = f"RORB CATG Editor - {fname}"
+            if self._check_unsaved_changes():
+                title += " *"
+        else:
+            title = "RORB CATG Editor"
+        self.setWindowTitle(title)
+
+    # ====================================================================
     # FILE OPERATIONS
     # ====================================================================
 
@@ -932,6 +1084,7 @@ class CATGEditorDialog(QDialog):
             )
             self.btn_save.setEnabled(True)
             self.btn_save_as.setEnabled(True)
+            self._clear_unsaved_changes()
 
             self.progress_bar.setValue(60)
             QApplication.processEvents()
@@ -989,6 +1142,7 @@ class CATGEditorDialog(QDialog):
         try:
             CATGWriter().write(self.catg, path)
             self.catg.filepath = path
+            self._clear_unsaved_changes()
             self._status(f"Saved successfully → {path}")
         except Exception as exc:
             QMessageBox.critical(
@@ -1223,18 +1377,19 @@ class CATGEditorDialog(QDialog):
 
         # --- Table ---
         COLS = [
-            "Index", "Name", "X", "Y", "SubArea", "Downstream",
-            "Area", "DCI", "ICI", "Print Flag", "Print Location",
+            "Index", "X", "Y", "Node Size", "SubArea", "Outlet Flag",
+            "Downstream", "Name", "Area", "DCI", "ICI",
+            "Print Flag", "Print Location",
         ]
-        PRINT_COL = 9
-        LOC_COL = 10
+        PRINT_COL = 11
+        LOC_COL = 12
 
         tbl = self._make_table(len(catg.nodes), len(COLS), editable=True)
         tbl.setHorizontalHeaderLabels(COLS)
         tbl.verticalHeader().setVisible(False)
 
         # Column widths
-        col_widths = [60, 100, 80, 80, 60, 85, 85, 80, 80, 90, 200]
+        col_widths = [60, 80, 80, 75, 60, 75, 85, 100, 85, 80, 80, 90, 200]
         for i, w in enumerate(col_widths):
             tbl.setColumnWidth(i, w)
 
@@ -1242,9 +1397,13 @@ class CATGEditorDialog(QDialog):
         self._updating = True
         for row, node in enumerate(catg.nodes):
             values = [
-                str(node.index), node.name,
+                str(node.index),
                 f"{node.x:.3f}", f"{node.y:.3f}",
-                str(node.subarea_flag), str(node.downstream),
+                f"{node.scale:.3f}",
+                str(node.subarea_flag),
+                str(node.unknown_flag),
+                str(node.downstream),
+                node.name,
                 f"{node.area:.6f}", f"{node.dci:.6f}", f"{node.ici:.6f}",
                 str(node.print_flag), node.print_location,
             ]
@@ -1329,6 +1488,7 @@ class CATGEditorDialog(QDialog):
                 self._updating = True
                 _color_row(r)
                 self._updating = False
+                self._mark_unsaved_changes()
                 self._update_file_info()
                 self._status(
                     f"Node {node.index} ({node.name}): "
@@ -1337,6 +1497,7 @@ class CATGEditorDialog(QDialog):
 
             elif col == LOC_COL:
                 node.print_location = tbl.item(r, LOC_COL).text().strip()
+                self._mark_unsaved_changes()
 
         tbl.cellChanged.connect(_on_cell_changed)
         lay.addWidget(tbl, 1)
@@ -1364,6 +1525,7 @@ class CATGEditorDialog(QDialog):
                     tbl.item(r, PRINT_COL).setText(str(flag_val))
                     _color_row(r)
             self._updating = False
+            self._mark_unsaved_changes()
             self._update_file_info()
             self._status(
                 f"Set {len(selected_rows)} node(s) → "
@@ -1520,15 +1682,19 @@ class CATGEditorDialog(QDialog):
         # --- Table ---
         COLS = [
             "Index", "Name", "From Node", "To Node",
-            "Type", "Length", "Slope", "Print Flag",
+            "TransFlag", "Type", "Print Flag", "Length", "Slope",
         ]
-        PRINT_COL = 7
+        TRANS_COL = 4
+        TYPE_COL = 5
+        PRINT_COL = 6
+        LENGTH_COL = 7
+        SLOPE_COL = 8
 
         tbl = self._make_table(len(catg.reaches), len(COLS), editable=True)
         tbl.setHorizontalHeaderLabels(COLS)
         tbl.verticalHeader().setVisible(False)
 
-        col_widths = [60, 160, 80, 80, 50, 90, 90, 80]
+        col_widths = [60, 160, 80, 80, 70, 50, 80, 90, 90]
         for i, w in enumerate(col_widths):
             tbl.setColumnWidth(i, w)
 
@@ -1538,27 +1704,31 @@ class CATGEditorDialog(QDialog):
             values = [
                 str(reach.index), reach.name,
                 str(reach.from_node), str(reach.to_node),
+                str(reach.unknown1),  # TransFlag
                 str(reach.reach_type),
-                f"{reach.length:.3f}", f"{reach.slope:.3f}",
                 str(reach.print_flag),
+                f"{reach.length:.3f}", f"{reach.slope:.3f}",
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
-                if col != PRINT_COL:
+                # Make TransFlag and PrintFlag editable
+                if col in (TRANS_COL, PRINT_COL):
+                    item.setBackground(self.COLOR_EDITABLE)
+                else:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setBackground(self.COLOR_READONLY)
-                else:
-                    item.setBackground(self.COLOR_EDITABLE)
                 tbl.setItem(row, col, item)
 
             # Highlight print-enabled rows
             if reach.print_flag != 0:
                 for col in range(len(COLS)):
                     it = tbl.item(row, col)
-                    if it and col != PRINT_COL:
+                    if it and col not in (TRANS_COL, PRINT_COL):
                         it.setBackground(self.COLOR_PRINT)
                     elif it and col == PRINT_COL:
                         it.setBackground(QColor(255, 224, 178))
+                    elif it and col == TRANS_COL:
+                        it.setBackground(QColor(255, 243, 224))  # Light orange for editable TransFlag
         self._updating = False
 
         # --- Helper: colour a single row ---
@@ -1573,6 +1743,10 @@ class CATGEditorDialog(QDialog):
                     it.setBackground(
                         QColor(255, 224, 178) if is_print else self.COLOR_EDITABLE
                     )
+                elif col == TRANS_COL:
+                    it.setBackground(
+                        QColor(255, 243, 224) if is_print else self.COLOR_EDITABLE
+                    )
                 else:
                     it.setBackground(
                         self.COLOR_PRINT if is_print else self.COLOR_READONLY
@@ -1582,35 +1756,61 @@ class CATGEditorDialog(QDialog):
         def _on_cell_changed(r, col):
             if self._updating:
                 return
-            if col != PRINT_COL or r < 0 or r >= len(catg.reaches):
+            if r < 0 or r >= len(catg.reaches):
                 return
+            if col not in (TRANS_COL, PRINT_COL):
+                return
+            
             reach = catg.reaches[r]
-            text = tbl.item(r, PRINT_COL).text().strip()
-            try:
-                val = int(text)
-            except ValueError:
-                self._updating = True
-                tbl.item(r, PRINT_COL).setText(str(reach.print_flag))
-                self._updating = False
-                self._status("Invalid print flag — must be 0 or 1")
+            
+            # Handle TransFlag edits
+            if col == TRANS_COL:
+                text = tbl.item(r, TRANS_COL).text().strip()
+                try:
+                    val = int(text)
+                except ValueError:
+                    self._updating = True
+                    tbl.item(r, TRANS_COL).setText(str(reach.unknown1))
+                    self._updating = False
+                    self._status("Invalid TransFlag — must be an integer")
+                    return
+                
+                reach.unknown1 = val
+                self._mark_unsaved_changes()
+                self._status(
+                    f"Reach {reach.index} ({reach.name}): TransFlag → {val}"
+                )
                 return
+            
+            # Handle PrintFlag edits
+            if col == PRINT_COL:
+                text = tbl.item(r, PRINT_COL).text().strip()
+                try:
+                    val = int(text)
+                except ValueError:
+                    self._updating = True
+                    tbl.item(r, PRINT_COL).setText(str(reach.print_flag))
+                    self._updating = False
+                    self._status("Invalid print flag — must be 0 or 1")
+                    return
 
-            if val not in REACH_PRINT_FLAGS:
+                if val not in REACH_PRINT_FLAGS:
+                    self._updating = True
+                    tbl.item(r, PRINT_COL).setText(str(reach.print_flag))
+                    self._updating = False
+                    self._status(f"Invalid print flag: {val}. Valid values: 0, 1")
+                    return
+
+                reach.print_flag = val
                 self._updating = True
-                tbl.item(r, PRINT_COL).setText(str(reach.print_flag))
+                _color_row(r)
                 self._updating = False
-                self._status(f"Invalid print flag: {val}. Valid values: 0, 1")
-                return
-
-            reach.print_flag = val
-            self._updating = True
-            _color_row(r)
-            self._updating = False
-            self._update_file_info()
-            self._status(
-                f"Reach {reach.index} ({reach.name}): "
-                f"print flag → {val} ({REACH_PRINT_FLAGS[val]})"
-            )
+                self._mark_unsaved_changes()
+                self._update_file_info()
+                self._status(
+                    f"Reach {reach.index} ({reach.name}): "
+                    f"print flag → {val} ({REACH_PRINT_FLAGS[val]})"
+                )
 
         tbl.cellChanged.connect(_on_cell_changed)
         lay.addWidget(tbl, 1)
@@ -1637,6 +1837,7 @@ class CATGEditorDialog(QDialog):
                     tbl.item(r, PRINT_COL).setText(str(flag_val))
                     _color_row(r)
             self._updating = False
+            self._mark_unsaved_changes()
             self._update_file_info()
             self._status(
                 f"Set {len(selected_rows)} reach(es) → "
@@ -1721,7 +1922,7 @@ class CATGEditorDialog(QDialog):
             f"<b>Total reaches:</b> {catg.reach_count}<br>"
             f"<b>Print reaches:</b> {print_reaches}<br>"
             f"<b>Reach types:</b> {type_str}<br>"
-            f"<b>Editable:</b> Print Flag"
+            f"<b>Editable:</b> TransFlag, Print Flag"
         )
 
     # ====================================================================
