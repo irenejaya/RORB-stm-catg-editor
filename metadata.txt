@@ -8,7 +8,7 @@ about=RORB catg/stm Editor displays RORB text files in interactive, colour-coded
     <br><br>
     <b>STM Editor</b> — Open an existing .stm file or create a new non-uniform storm file from scratch. The New STM wizard scaffolds a complete file (event header, storm parameters, burst time ranges, pluviograph data, sub-area rainfalls, pluviograph references, and hydrograph stations). Every section is shown as an editable table where you can add or delete bursts, pluviographs, and hydrograph stations — storm parameter counts sync automatically. Delimiter format (tab or comma) and -99 terminators are managed by the editor.
 
-version=1.0.0
+version=1.0.1
 author=Irene Jaya
 email=irenejaya1@gmail.com
 tracker=https://github.com/irenejaya/RORB-catg-stm-editor/issues
@@ -26,6 +26,9 @@ hasProcessingProvider=no
 server=False
 
 changelog=
+    1.0.1 - Bug Fix
+        * CATG Editor: Fixed critical PrintFlag parsing bug in REACHES and NODES section and added proper column ordering matching RORB file format.
+    
     1.0.0 - Initial release
         * CATG Editor: interactive table view of RORB catchment files
         * CATG Editor: editable print flags for nodes and reaches
