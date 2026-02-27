@@ -8,7 +8,7 @@ Registers two toolbar actions:
 """
 
 import os
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication
+from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, Qt
 from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtGui import QIcon
 
@@ -28,8 +28,7 @@ class RORBFileEditorPlugin:
         self.actions = []
         self.menu_name = "RORB catg/stm Editor"
         self.toolbar = None
-        self.dlg_catg = None
-        self.dlg_stm = None
+        self.dialogs = []  # Track open dialogs for cleanup
 
         # Initialize locale (with safe fallback)
         locale_setting = QSettings().value('locale/userLocale')
@@ -92,28 +91,36 @@ class RORBFileEditorPlugin:
         self.actions.append(self.action_stm)
 
     def run_catg(self):
-        """Launch the CATG Editor dialog."""
-        if self.dlg_catg is None:
-            from .editors.rorb_catg_editor import CATGEditorDialog
-            self.dlg_catg = CATGEditorDialog(
-                parent=self.iface.mainWindow()
-            )
-
-        self.dlg_catg.show()
-        self.dlg_catg.raise_()
-        self.dlg_catg.activateWindow()
+        """Launch a new CATG Editor dialog window."""
+        from .editors.rorb_catg_editor import CATGEditorDialog
+        
+        # Create a fresh, independent dialog instance each time
+        dlg = CATGEditorDialog(parent=None)  # No parent = independent window
+        dlg.setAttribute(Qt.WA_DeleteOnClose, True)  # Auto-cleanup when closed
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        
+        # Track the dialog for any cleanup if needed
+        self.dialogs.append(dlg)
+        # Remove from list when closed
+        dlg.finished.connect(lambda: self.dialogs.remove(dlg) if dlg in self.dialogs else None)
 
     def run_stm(self):
-        """Launch the STM Editor dialog."""
-        if self.dlg_stm is None:
-            from .editors.rorb_stm_editor import STMEditorDialog
-            self.dlg_stm = STMEditorDialog(
-                parent=self.iface.mainWindow()
-            )
-
-        self.dlg_stm.show()
-        self.dlg_stm.raise_()
-        self.dlg_stm.activateWindow()
+        """Launch a new STM Editor dialog window."""
+        from .editors.rorb_stm_editor import STMEditorDialog
+        
+        # Create a fresh, independent dialog instance each time
+        dlg = STMEditorDialog(parent=None)  # No parent = independent window
+        dlg.setAttribute(Qt.WA_DeleteOnClose, True)  # Auto-cleanup when closed
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        
+        # Track the dialog for any cleanup if needed
+        self.dialogs.append(dlg)
+        # Remove from list when closed
+        dlg.finished.connect(lambda: self.dialogs.remove(dlg) if dlg in self.dialogs else None)
 
     def unload(self):
         """Unload the plugin - called when plugin is unloaded."""
@@ -125,10 +132,7 @@ class RORBFileEditorPlugin:
         if self.toolbar:
             del self.toolbar
 
-        # Close dialogs
-        if self.dlg_catg:
-            self.dlg_catg.close()
-            self.dlg_catg = None
-        if self.dlg_stm:
-            self.dlg_stm.close()
-            self.dlg_stm = None
+        # Close all open dialogs
+        for dlg in self.dialogs[:]:  # Copy list to avoid modification during iteration
+            dlg.close()
+        self.dialogs = []
