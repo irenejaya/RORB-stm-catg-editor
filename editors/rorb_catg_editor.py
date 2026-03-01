@@ -1683,6 +1683,7 @@ class CATGEditorDialog(QDialog):
         COLS = [
             "Index", "Name", "From Node", "To Node",
             "TransFlag", "Type", "Print Flag", "Length", "Slope",
+            "Ncoords", "N/A",
         ]
         TRANS_COL = 4
         TYPE_COL = 5
@@ -1694,7 +1695,7 @@ class CATGEditorDialog(QDialog):
         tbl.setHorizontalHeaderLabels(COLS)
         tbl.verticalHeader().setVisible(False)
 
-        col_widths = [60, 160, 80, 80, 70, 50, 80, 90, 90]
+        col_widths = [60, 160, 80, 80, 70, 50, 80, 90, 90, 70, 70]
         for i, w in enumerate(col_widths):
             tbl.setColumnWidth(i, w)
 
@@ -1708,6 +1709,8 @@ class CATGEditorDialog(QDialog):
                 str(reach.reach_type),
                 str(reach.print_flag),
                 f"{reach.length:.3f}", f"{reach.slope:.3f}",
+                str(reach.n_coords),
+                str(reach.unknown2),  # Reserved
             ]
             for col, val in enumerate(values):
                 item = QTableWidgetItem(val)
